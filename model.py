@@ -2,26 +2,107 @@ import torch
 import random
 import time
 import numpy as np
+from torch import nn
 from torch.utils.data import Dataset, DataLoader
-from torchvision import models
+# from torchvision import models
 
-IMG_SHAPE = (3, 224, 224)
 NUM_EPOCHS = 10
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+def create_pairs(X):  # X is a list containing 40 lists with 10 imgs for each
+    pairs = []
+    class_num = len(X)
+    for i in range(class_num):
+        # append all positive pairs in one class
+        for x1 in X[i]:
+            for x2 in X[i]:
+                pairs.append([x1, x2, 0])
+                random_class = (
+                    i + random.randint(1, class_num - 1)) % class_num
+                x3 = random.choice(X[random_class])
+                pairs.append([x1, x3, 1])
+    return pairs
+
 
 class ImageDataset(Dataset):
-    def __init__(self, num_imgs=128):
-        self.num_imgs = num_imgs
-        self.data_x1 = [torch.rand(IMG_SHAPE) for i in range(num_imgs)]
-        self.data_x2 = [torch.rand(IMG_SHAPE) for i in range(num_imgs)]
-        self.data_y = [torch.randint(0, 2, (1, )) for i in range(num_imgs)]
+    def __init__(self, X):
+        self.pairs = create_pairs(X)
 
     def __getitem__(self, index):
-        return self.data_x1[index], self.data_x2[index], self.data_y[index]
+        x1 = torch.Tensor(self.pairs[index][0]).unsqueeze(0)
+        x2 = torch.Tensor(self.pairs[index][1]).unsqueeze(0)
+        y = torch.Tensor([self.pairs[index][2]])
+        return x1, x2, y
 
     def __len__(self):
-        return self.num_imgs
+        return len(self.pairs)
+
+
+class SiameseNetwork(nn.Module):
+    def __init__(self):
+        super(SiameseNetwork, self).__init__()
+        self.cnn1 = nn.Sequential(
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(1, 4, kernel_size=3),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(4),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(4, 8, kernel_size=3),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(8),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(8, 8, kernel_size=3),
+            nn.ReLU(inplace=True),
+            nn.BatchNorm2d(8),
+        )
+
+        self.fc1 = nn.Sequential(
+            nn.Linear(8 * 92 * 112, 500),
+            nn.ReLU(inplace=True),
+            nn.Linear(500, 500),
+            nn.ReLU(inplace=True),
+            nn.Linear(500, 5))
+
+        # self.squash_layer = torch.nn.Sigmoid()
+        self.optimizer = torch.optim.Adam(self.parameters())
+        self.criterion = torch.nn.MSELoss()
+
+    def forward_once(self, x):
+        output = self.cnn1(x)
+        output = output.view(output.size()[0], -1)
+        output = self.fc1(output)
+        return output
+
+    def forward(self, input1, input2):
+        output1 = self.forward_once(input1)
+        output2 = self.forward_once(input2)
+        return output1, output2
+
+    def distance(self, input1, input2):
+        output1, output2 = self.forward(input1, input2)
+        return torch.nn.functional.pairwise_distance(output1, output2)
+
+    def fit(self, dataloader):
+        since = time.time()
+        for epoch in range(NUM_EPOCHS):
+            batch = 1
+            for batch_x1, batch_x2, batch_y in dataloader:
+                bx1 = batch_x1.to(device)
+                bx2 = batch_x2.to(device)
+                by = batch_y.to(device)
+
+                self.optimizer.zero_grad()
+                # by_pred = self.forward(bx1, bx2).squeeze()
+                by_pred = self.distance(bx1, bx2).squeeze()
+                by = by.squeeze()
+                loss = self.criterion(by_pred, by)
+
+                loss.backward()
+                self.optimizer.step()
+                print('Epoch:{:02d}/{}, Batch:{:02d}, Loss:{:.4f}'.format(
+                    epoch + 1, NUM_EPOCHS, batch, loss))
+                batch += 1
+        print('Training completed in {:.2f}s'.format(time.time() - since))
 
 
 class MetricLearningNet(torch.nn.Module):
@@ -69,10 +150,13 @@ class MetricLearningNet(torch.nn.Module):
 
 
 def main():
-    dataset = ImageDataset()
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=4)
+    X = [[torch.rand(112, 92) for i in range(10)] for j in range(40)]
+    dataset = ImageDataset(X)
+    dataloader = DataLoader(
+        dataset, batch_size=64, shuffle=True, num_workers=4)
     print('data loaded...')
-    mlnet = MetricLearningNet().to(device)
+    # mlnet = MetricLearningNet().to(device)
+    mlnet = SiameseNetwork().to(device)
     print('model loaded...')
     print('start training...')
     mlnet.fit(dataloader)
