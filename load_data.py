@@ -13,10 +13,20 @@ def ImageToMatrix(filename):
 	# show image
 	# im.show()
 	width,height = im.size # size
+
 	im_data = im.getdata() 
 	data = np.matrix(im_data,np.uint8) #transform to maxtrix
 	new_data = np.reshape(data,(height,width)) 
 	return new_data
+
+def matrix_reshape(matrix, rate=1.0):
+	im = Image.fromarray(matrix)
+	width,height = im.size
+	nw, nh = int(width*rate), int(height*rate)
+	im = im.resize((nw,nh),Image.ANTIALIAS)
+	new_matrix = np.asarray(im)
+	return new_matrix
+
 
 def load_all_data():
 	all_data = []
@@ -42,5 +52,7 @@ def show_random_one(all_data):
 
 if __name__ == "__main__":
 	all_data = load_all_data()
+	# m = all_data[0][0]
+	# matrix_reshape(m)
 	# just for a test
 	# show_random_one(all_data)

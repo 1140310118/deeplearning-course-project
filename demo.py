@@ -112,7 +112,7 @@ def knn_method(X, y, splits=6):
 def lmnn_method(X, y, splits=6):
 	skf = StratifiedKFold(n_splits=splits)
 	accuracy = 0
-	lmnn = LMNN(k=10, learn_rate=1e-6)
+	lmnn = LMNN(k=3, learn_rate=1e-6)
 	for train_index, test_index in skf.split(X, y):
 		X_train, X_test = X[train_index], X[test_index]
 		y_train, y_test = y[train_index], y[test_index]
