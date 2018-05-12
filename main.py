@@ -50,18 +50,21 @@ class my_SKF:
         return self
 
 
-def knn(X, y, splits=6):
+def knn(X, y, splits=5):
     num, xlen, ylen = X.shape
     X = X.reshape((num, xlen * ylen))
     accuracy = 0
     mskf = my_SKF(X, y, splits)
 
+    cnt = 0
     for X_train, y_train, X_test, y_test in mskf:
         knn = neighbors.KNeighborsClassifier()
         knn.fit(X_train, y_train)
-        a = knn.score(X_test, y_test)
-        accuracy += a
-    return (accuracy / splits)
+        acc = knn.score(X_test, y_test)
+        accuracy += acc
+        cnt += 1
+        print('Split:{}, Acc:{:.4f}'.format(cnt, acc))
+    return accuracy / splits
 
 
 def lmnn(X, y, splits=6, rate=0.1):
@@ -106,7 +109,7 @@ def knn_pred(net, X_train, Y_train, x, batch_num=2, k=5):
     topk_candidates = candidates[:k]
     topk_idxs = [p[1] for p in topk_candidates]
     topk_labels = Y_train[topk_idxs].tolist()
-    label_count = dict((x,topk_labels.count(x)) for x in set(topk_labels))
+    label_count = dict((x, topk_labels.count(x)) for x in set(topk_labels))
     max_count = max(label_count.values())
     for label in label_count:
         count = label_count[label]
@@ -149,5 +152,14 @@ def mlnet_method(X, Y, splits=5):
 
 if __name__ == "__main__":
     X, Y = load_data()
-    accuracy = mlnet_method(X, Y)
+    splits = 10
+    
+    # run original knn on 10-flod cross validation sets
+    print('Vanilla KNN:')
+    accuracy = knn(X, Y, splits=splits)
+    print('mean Acc:{:.4f}'.format(accuracy))
+    
+    # run siamesenetwork-based knn on 10-flod cross validation sets
+    print('SiameseNetwork-based KNN:')
+    accuracy = mlnet_method(X, Y, splits=splits)
     print('mean Acc:{:.4f}'.format(accuracy))

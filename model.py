@@ -4,7 +4,6 @@ import time
 import numpy as np
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
-# from torchvision import models
 
 NUM_EPOCHS = 10
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -114,54 +113,9 @@ class SiameseNetwork(nn.Module):
                 loss.backward()
                 self.optimizer.step()
                 batch += 1
-                print('Epoch:{:02d}/{}, Batch:{:02d}, Loss:{:.4f}'.format(
-                    epoch + 1, NUM_EPOCHS, batch, loss))
-        print('Training completed in {:.2f}s'.format(time.time() - since))
-
-
-class MetricLearningNet(torch.nn.Module):
-    def __init__(self):
-        super(MetricLearningNet, self).__init__()
-        self.net1 = models.resnet18()
-        self.net2 = models.resnet18()
-        self.net1.fc = torch.nn.Linear(512, 100)
-        self.net2.fc = torch.nn.Linear(512, 100)
-        self.last_linear = torch.nn.Linear(200, 1)
-        self.squash_layer = torch.nn.Sigmoid()
-        self.optimizer = torch.optim.Adam(self.parameters())
-        self.criterion = torch.nn.MSELoss()
-
-    def forward(self, x1, x2):
-        feature1 = self.net1(x1)
-        feature2 = self.net2(x2)
-        activation = self.last_linear(torch.cat((feature1, feature2), 1))
-        distance = self.squash_layer(activation)
-        return distance
-
-    def distance(self, x1, x2):
-        return self.forward(x1, x2)
-
-    def fit(self, dataloader):
-        self.train()
-        since = time.time()
-        for epoch in range(NUM_EPOCHS):
-            batch = 1
-            for batch_x1, batch_x2, batch_y in dataloader:
-                bx1 = batch_x1.to(device)
-                bx2 = batch_x2.to(device)
-                by = batch_y.to(device)
-
-                self.optimizer.zero_grad()
-                by_pred = self.forward(bx1, bx2).squeeze()
-                by = by.squeeze()
-                loss = self.criterion(by_pred, by)
-
-                loss.backward()
-                self.optimizer.step()
-                print('Epoch:{:02d}/{}, Batch:{:02d}, Loss:{:.4f}'.format(
-                    epoch + 1, NUM_EPOCHS, batch, loss))
-                batch += 1
-        print('Training completed in {:.2f}s'.format(time.time() - since))
+        #         print('Epoch:{:02d}/{}, Batch:{:02d}, Loss:{:.4f}'.format(
+        #             epoch + 1, NUM_EPOCHS, batch, loss))
+        # print('Training completed in {:.2f}s'.format(time.time() - since))
 
 
 def main():
@@ -170,7 +124,6 @@ def main():
     dataloader = DataLoader(
         dataset, batch_size=64, shuffle=True, num_workers=4)
     print('data loaded...')
-    # mlnet = MetricLearningNet().to(device)
     mlnet = SiameseNetwork().to(device)
     print('model loaded...')
     print('start training...')
