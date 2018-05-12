@@ -9,6 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 NUM_EPOCHS = 10
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+
 def create_pairs(X):  # X is a list containing 40 lists with 10 imgs for each
     pairs = []
     class_num = len(X)
@@ -61,13 +62,16 @@ class SiameseNetwork(nn.Module):
             nn.ReLU(inplace=True),
             nn.Linear(500, 500),
             nn.ReLU(inplace=True),
-            nn.Linear(500, 5))
+            nn.Linear(500, 20),
+        )
 
-        # self.squash_layer = torch.nn.Sigmoid()
         self.optimizer = torch.optim.Adam(self.parameters())
-        self.criterion = torch.nn.MSELoss()
+        self.lr_adaptor = torch.optim.lr_scheduler.StepLR(self.optimizer, 5)
+        self.criterion = nn.MSELoss()
 
     def forward_once(self, x):
+        if isinstance(x, np.ndarray) and x.shape[0] == 112 * 92:
+            x = torch.Tensor(x.reshape(1, 112, 92)).unsqueeze(0)
         output = self.cnn1(x)
         output = output.view(output.size()[0], -1)
         output = self.fc1(output)
@@ -80,28 +84,38 @@ class SiameseNetwork(nn.Module):
 
     def distance(self, input1, input2):
         output1, output2 = self.forward(input1, input2)
-        return torch.nn.functional.pairwise_distance(output1, output2)
+        d = torch.nn.functional.pairwise_distance(output1, output2)
+        return d
 
     def fit(self, dataloader):
+        stop_line = 0.5
+        combo = 0
         since = time.time()
         for epoch in range(NUM_EPOCHS):
-            batch = 1
+            batch = 0
+            self.lr_adaptor.step()
             for batch_x1, batch_x2, batch_y in dataloader:
                 bx1 = batch_x1.to(device)
                 bx2 = batch_x2.to(device)
                 by = batch_y.to(device)
 
                 self.optimizer.zero_grad()
-                # by_pred = self.forward(bx1, bx2).squeeze()
                 by_pred = self.distance(bx1, bx2).squeeze()
-                by = by.squeeze()
+                by = by.squeeze() * 10
                 loss = self.criterion(by_pred, by)
+
+                if loss < stop_line:
+                    combo += 1
+                    if combo == 5:
+                        return
+                else:
+                    combo = 0
 
                 loss.backward()
                 self.optimizer.step()
+                batch += 1
                 print('Epoch:{:02d}/{}, Batch:{:02d}, Loss:{:.4f}'.format(
                     epoch + 1, NUM_EPOCHS, batch, loss))
-                batch += 1
         print('Training completed in {:.2f}s'.format(time.time() - since))
 
 
@@ -128,6 +142,7 @@ class MetricLearningNet(torch.nn.Module):
         return self.forward(x1, x2)
 
     def fit(self, dataloader):
+        self.train()
         since = time.time()
         for epoch in range(NUM_EPOCHS):
             batch = 1

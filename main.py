@@ -89,36 +89,65 @@ def lmnn(X, y, splits=6, rate=0.1):
     return (accuracy / splits)
 
 
+def knn_pred(net, X_train, Y_train, x, batch_num=2, k=5):
+    batch_size = int(X_train.shape[0] / batch_num)
+    batch_x1 = np.array([x] * batch_size)
+    candidates = []
+    for i in range(batch_num):
+        batch_x2 = X_train[i * batch_size:(i + 1) * batch_size]
+        input1 = torch.Tensor(batch_x1).unsqueeze(1).cuda()
+        input2 = torch.Tensor(batch_x2).unsqueeze(1).cuda()
+        batch_distance = net.distance(input1, input2).squeeze()
+        topk, idxs = torch.topk(batch_distance, k, largest=False)
+        idxs = idxs + i * batch_size
+        distance_idx_pairs = list(zip(topk.tolist(), idxs.tolist()))
+        candidates += distance_idx_pairs
+    candidates.sort()
+    topk_candidates = candidates[:k]
+    topk_idxs = [p[1] for p in topk_candidates]
+    topk_labels = Y_train[topk_idxs].tolist()
+    label_count = dict((x,topk_labels.count(x)) for x in set(topk_labels))
+    max_count = max(label_count.values())
+    for label in label_count:
+        count = label_count[label]
+        if count == max_count:
+            return label
+
+
 def transform(X, Y):
-    new_X = [[]] * (max(Y) + 1)
+    new_X = [[] for i in range(max(Y) + 1)]
     for x, y in zip(X, Y):
         new_X[y].append(x)
     return new_X
 
 
-def mlnet_method(X, y, splits=6):
-    accuracy = 0
-    mskf = my_SKF(X, y, splits)
+def mlnet_method(X, Y, splits=5):
+    accuracy, cnt = 0, 0
+    mskf = my_SKF(X, Y, splits)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    for X_train, y_train, X_test, y_test in mskf:
-        new_X = transform(X_train, y_train)
+    for X_train, Y_train, X_test, Y_test in mskf:
+        new_X = transform(X_train, Y_train)
         dataset = ImageDataset(new_X)
         dataloader = DataLoader(
             dataset, batch_size=128, shuffle=True, num_workers=4)
-        print('data loaded...')
-        mlnet = SiameseNetwork().to(device)
-        print('model loaded...')
-        print('start training...')
-        mlnet.fit(dataloader)
+        net = SiameseNetwork().to(device)
+        net.fit(dataloader)
 
-        knn = neighbors.KNeighborsClassifier(metric=mlnet.distance)
-        knn.fit(X_train, y_train)
-        a = knn.score(X_test, y_test)
-        accuracy += a
-    return (accuracy / splits)
+        net.eval()
+        hit = 0
+        for i, x in enumerate(X_test):
+            y_pred = knn_pred(net, X_train, Y_train, x, batch_num=1)
+            y_real = Y_test[i]
+            if y_pred == y_real:
+                hit += 1
+        acc = hit / X_test.shape[0]
+        accuracy += acc
+        cnt += 1
+        print('Split:{}, Acc:{:.4f}'.format(cnt, acc))
+    return accuracy / splits
 
 
 if __name__ == "__main__":
-    X, y = load_data()
-    accuracy = mlnet_method(X, y, 5)
-    print(accuracy)
+    X, Y = load_data()
+    accuracy = mlnet_method(X, Y)
+    print('mean Acc:{:.4f}'.format(accuracy))
